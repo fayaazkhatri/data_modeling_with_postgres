@@ -7,6 +7,10 @@ import io
 
 
 def process_song_file(conn, cur, filepath):
+    """
+    - reads song JSON from given filepath into pandas DataFrame
+    - connects to sparkify DB and writes values to songs and artists tables
+    """
     # open song file
     df = pd.read_json(filepath, lines=True)
 
@@ -16,11 +20,20 @@ def process_song_file(conn, cur, filepath):
     
     # insert artist record
     # dropping duplicates before insert to improve speed
-    artist_data = df[['artist_id', 'artist_name', 'artist_location', 'artist_latitude', 'artist_longitude']].drop_duplicates().values[0]
+    artist_columns = ['artist_id', 'artist_name', 'artist_location', 'artist_latitude', 'artist_longitude']
+    artist_data = df[artist_columns].drop_duplicates().values[0]
     cur.execute(artist_table_insert, artist_data)
 
 
 def process_log_file(conn, cur, filepath):
+    """
+    - reads log JSON from given file path into pandas DataFrame
+    - filters data, applies datetime formatting to timestamp column
+    - bulk inserts records into time table
+    - inserts records into users table
+    - bulk inserts records into songsplays table
+
+    """
     # open log file
     df = pd.read_json(filepath, lines=True)
 
@@ -51,38 +64,9 @@ def process_log_file(conn, cur, filepath):
     user_df = df[['userId', 'firstName', 'lastName', 'gender', 'level']]
 
     # insert user records
-    
     for index, row in user_df.drop_duplicates().iterrows():
         user_data = (row.userId, row.firstName, row.lastName, row.gender, row.level)
         cur.execute(user_table_insert, user_data)
-        
-    # attempt at using a bulk insert for users insert, but fails due to conflict/update occuring more than once on the same record
-    # created temporary table to hold user data, used COPY to populate temporary table from user results
-    # bulk insert from temp table into users table, but ON CONFLICT errors when it tries to update the same record more than once
-
-    #cur.execute(''' DROP TABLE IF EXISTS temp_users;
-    #            
-    #                CREATE TEMP TABLE temp_users (
-    #                    user_id int, 
-    #                    first_name varchar, 
-    #                    last_name varchar, 
-    #                    gender varchar, 
-    #                    level varchar
-    #                    );
-    #''')
-    #
-    #output = io.StringIO()
-    #user_df.drop_duplicates().to_csv(output, sep='\t', header=False, index=False)
-    #output.seek(0)
-    #cur.copy_from(output, 'temp_users')
-    #
-    #cur.execute(''' INSERT INTO users
-    #                SELECT * FROM temp_users
-    #                ON CONFLICT (user_id)
-    #                    DO UPDATE
-    #                        SET level = EXCLUDED.level
-    #''')
-    
     
     # insert songplay records
     
@@ -90,10 +74,13 @@ def process_log_file(conn, cur, filepath):
     artists_songs = pd.read_sql_query(select_artists_songs, conn)
     
     # merge the songplay log data with artists_songs to get song_id and artist_id fields
-    df2 = df.merge(artists_songs, how='left', left_on=['song', 'artist', 'length'], right_on=['song_name', 'artist_name', 'duration'])
+    df2 = df.merge(artists_songs, how='left', 
+                    left_on=['song', 'artist', 'length'],
+                    right_on=['song_name', 'artist_name', 'duration'])
 
     # limit to fields on interest for insert
-    songplays_df= df2[['ts', 'userId', 'level', 'song_id', 'artist_id', 'sessionId', 'location', 'userAgent']]
+    songplays_columns = ['ts', 'userId', 'level', 'song_id', 'artist_id', 'sessionId', 'location', 'userAgent']
+    songplays_df= df2[songplays_columns]
 
     # used COPY for bulk insert into songplays table
     output = io.StringIO()
@@ -103,6 +90,10 @@ def process_log_file(conn, cur, filepath):
 
 
 def process_data(cur, conn, filepath, func):
+    """
+    - iterates through a given filepath
+    - implements respective song and log functions define above
+    """
     # get all files matching extension from directory
     all_files = []
     for root, dirs, files in os.walk(filepath):
@@ -122,6 +113,10 @@ def process_data(cur, conn, filepath, func):
 
 
 def main():
+    """
+    - establishes connection to Postgres sparkifydb
+    - executes processing for song files and log files defined above
+    """
     conn = psycopg2.connect("host=127.0.0.1 dbname=sparkifydb user=student password=student")
     cur = conn.cursor()
 
