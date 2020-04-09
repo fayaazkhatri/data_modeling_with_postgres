@@ -59,7 +59,8 @@ songplay_table_create = ("""CREATE TABLE songplays (
                             artist_id varchar, 
                             session_id int NOT NULL,
                             location varchar, 
-                            user_agent varchar
+                            user_agent varchar,
+                            UNIQUE (start_time, user_id, session_id)
                             )
 """)
 
